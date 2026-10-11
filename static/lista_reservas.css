@@ -1023,3 +1023,14 @@ body {
         animation: none !important;
     }
 }
+
+/* MINIATURA DA FOTO DO CLIENTE */
+
+.foto-reserva {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #e67e22;
+    flex-shrink: 0;
+}

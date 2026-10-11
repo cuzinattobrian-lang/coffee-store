@@ -67,6 +67,11 @@
 
                     <article class="reserva-card">
                         <div class="reserva-card-header">
+                            <img
+                                src="{{ url_for('static', filename='uploads/' ~ (usuario.foto or 'padrao.png')) }}"
+                                alt="Foto do usuário"
+                                class="foto-reserva"
+                            >
                             <div>
                                 <span class="reserva-numero"> Reserva #{{ reserva.id }} </span>
 

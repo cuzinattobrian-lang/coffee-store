@@ -86,6 +86,16 @@
 
                 {% endif %}
 
+                {% with mensagens = get_flashed_messages(with_categories=true) %}
+                    {% if mensagens %}
+                        {% for categoria, mensagem in mensagens %}
+                            <div class="mensagem-{{ 'sucesso' if categoria == 'sucesso' else 'erro' }}">
+                                {{ mensagem }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
                 <!-- ==================================
                  FORMULÁRIO
             =================================== -->
@@ -94,7 +104,47 @@
                     method="POST"
                     action="{{ url_for('routes.meu_cadastro') }}"
                     class="form-login"
+                    enctype="multipart/form-data"
                 >
+
+                <!-- FOTO DE PERFIL -->
+
+                    <div class="perfil-foto-container">
+
+                        <img
+                            id="preview-foto"
+                            src="{{ url_for('static', filename='uploads/' ~ (usuario.foto or 'padrao.png')) }}"
+                            alt="Foto de perfil"
+                            class="foto-perfil"
+                        >
+
+                        <h3>Foto de perfil</h3>
+
+                        <label for="campo_imagem" class="btn-alterar-foto">
+                            Escolher nova foto
+                        </label>
+
+                        <input
+                            type="file"
+                            id="campo_imagem"
+                            name="campo_imagem"
+                            accept="image/png,image/jpeg,image/webp"
+                            onchange="mostrarPreview(event)"
+                        >
+
+                        <label class="remover-foto">
+                            <input
+                                type="checkbox"
+                                name="remover_foto"
+                                value="1"
+                            >
+                            Remover foto atual
+                        </label>
+
+                        <small>Formatos: PNG, JPG, JPEG ou WEBP. Máximo de 5 MB.</small>
+
+                    </div>
+
                     <!-- NOME -->
 
                     <div class="campo">
@@ -201,6 +251,24 @@
                         <button type="submit" class="btn btn-reserva">Salvar alterações</button>
                     </div>
                 </form>
+
+                <div class="excluir-conta-container">
+                    <h3>Excluir minha conta</h3>
+
+                    <p>
+                        Esta ação é permanente e não poderá ser desfeita.
+                    </p>
+
+                    <form
+                        action="{{ url_for('routes.excluir_minha_conta') }}"
+                        method="POST"
+                        onsubmit="return confirm('Tem certeza que deseja excluir sua conta permanentemente?');"
+                    >
+                        <button type="submit" class="btn-excluir-conta">
+                            Excluir minha conta
+                        </button>
+                    </form>
+                </div>
             </div>
         </main>
 
@@ -215,5 +283,22 @@
                 </div>
             </div>
         </footer>
+
+        <script>
+            function mostrarPreview(event) {
+                const arquivo = event.target.files[0];
+                const preview = document.getElementById("preview-foto");
+
+                if (arquivo) {
+                    const urlTemporaria = URL.createObjectURL(arquivo);
+
+                    preview.onload = function () {
+                        URL.revokeObjectURL(urlTemporaria);
+                    };
+
+                    preview.src = urlTemporaria;
+                }
+            }
+        </script>
     </body>
 </html>

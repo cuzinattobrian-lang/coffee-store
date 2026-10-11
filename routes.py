@@ -1,3 +1,9 @@
+import os
+import uuid
+
+from flask import current_app, flash
+from werkzeug.utils import secure_filename
+
 import time                        # Controle de tempo e pausas
 import threading                   # Execução de tarefas em segundo plano
 from datetime import datetime      # Manipulação e formatação de datas/horários
@@ -22,6 +28,73 @@ from models import Reserva, Usuario
 cache = Cache()
 
 routes = Blueprint("routes", __name__)
+
+# ==========================================
+# GERENCIAMENTO DE FOTOS DE PERFIL
+# ==========================================
+
+EXTENSOES_PERMITIDAS = {"png", "jpg", "jpeg", "webp"}
+
+
+def extensao_permitida(nome_arquivo):
+    return (
+        "." in nome_arquivo
+        and nome_arquivo.rsplit(".", 1)[1].lower()
+        in EXTENSOES_PERMITIDAS
+    )
+
+
+def salvar_foto(arquivo):
+    nome_original = secure_filename(arquivo.filename)
+
+    if not extensao_permitida(nome_original):
+        raise ValueError(
+            "Formato inválido! Envie PNG, JPG, JPEG ou WEBP."
+        )
+
+    # Verifica o conteúdo real da imagem
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        arquivo.stream.seek(0)
+        with Image.open(arquivo.stream) as imagem:
+            if imagem.format not in {"PNG", "JPEG", "WEBP"}:
+                raise ValueError("O arquivo não é uma imagem válida.")
+            imagem.verify()
+    except (UnidentifiedImageError, OSError):
+        raise ValueError("O arquivo não é uma imagem válida.")
+    finally:
+        arquivo.stream.seek(0)
+
+    extensao = nome_original.rsplit(".", 1)[1].lower()
+
+    nome_novo = f"{uuid.uuid4().hex}.{extensao}"
+
+    caminho = os.path.join(
+        current_app.config["UPLOAD_FOLDER"],
+        nome_novo
+    )
+
+    arquivo.save(caminho)
+
+    return nome_novo
+
+
+def excluir_foto(nome_arquivo):
+    if not nome_arquivo or nome_arquivo == "padrao.png":
+        return
+
+    # Impede caminhos fora da pasta de uploads
+    if os.path.basename(nome_arquivo) != nome_arquivo:
+        return
+
+    caminho = os.path.join(
+        current_app.config["UPLOAD_FOLDER"],
+        nome_arquivo
+    )
+
+    if os.path.isfile(caminho):
+        os.remove(caminho)
 
 
 # ==========================================
@@ -588,7 +661,10 @@ def minhas_reservas():
         .order_by(Reserva.data.asc(), Reserva.horario.asc())
         .all()
     )
-    return render_template("minhas_reservas.html", reservas=reservas)
+    usuario = db.session.get(Usuario, session["usuario_id"])
+
+    return render_template("minhas_reservas.html", reservas=reservas, usuario=usuario
+)
 
 
 @routes.route("/editar-reserva/<int:id>", methods=["GET", "POST"])
@@ -678,8 +754,10 @@ def cancelar_reserva(id):
 @routes.route("/meu-cadastro", methods=["GET", "POST"])
 @cliente_required
 def meu_cadastro():
-    usuario = Usuario.query.get(session["usuario_id"])
-    erro, sucesso = None, None
+    usuario = db.session.get(Usuario, session["usuario_id"])
+
+    erro = None
+    sucesso = None
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
@@ -687,38 +765,109 @@ def meu_cadastro():
         telefone = request.form.get("telefone", "").strip()
         nova_senha = request.form.get("senha", "")
 
-        telefone_limpo = "".join(c for c in telefone if c.isdigit())
+        foto = request.files.get("campo_imagem")
+        remover_foto = request.form.get("remover_foto") == "1"
 
+        telefone_limpo = "".join(
+            c for c in telefone if c.isdigit()
+        )
+
+        # Validação dos dados
         if not nome or len(nome) < 2:
             erro = "O nome deve possuir pelo menos 2 caracteres."
+
         elif not email or "@" not in email:
             erro = "Informe um e-mail válido."
+
         elif len(telefone_limpo) not in [10, 11]:
             erro = "Informe um telefone válido."
 
         if not erro:
             outro = Usuario.query.filter(
-                Usuario.email == email, Usuario.id != usuario.id
+                Usuario.email == email,
+                Usuario.id != usuario.id
             ).first()
+
             if outro:
                 erro = "Este e-mail já está sendo utilizado."
 
         if not erro and nova_senha and len(nova_senha) < 6:
             erro = "A nova senha deve possuir pelo menos 6 caracteres."
 
-        if not erro:
-            usuario.nome = nome
-            usuario.email = email
-            usuario.telefone = telefone_limpo
-            if nova_senha:
-                usuario.senha = generate_password_hash(nova_senha)
+        # Validação da foto
+        if not erro and foto and foto.filename:
+            nome_seguro = secure_filename(foto.filename)
 
-            db.session.commit()
-            session["nome"] = usuario.nome
-            sucesso = "Seus dados foram atualizados com sucesso."
+            if not extensao_permitida(nome_seguro):
+                erro = (
+                    "Formato inválido! "
+                    "Envie PNG, JPG, JPEG ou WEBP."
+                )
+
+        if erro:
+            flash(erro, "erro")
+
+        else:
+            foto_antiga = usuario.foto or "padrao.png"
+            nova_foto = None
+
+            try:
+                if foto and foto.filename and not remover_foto:
+                    nova_foto = salvar_foto(foto)
+
+                usuario.nome = nome
+                usuario.email = email
+                usuario.telefone = telefone_limpo
+
+                if nova_senha:
+                    usuario.senha = generate_password_hash(
+                        nova_senha
+                    )
+
+                if nova_foto:
+                    usuario.foto = nova_foto
+
+                elif remover_foto:
+                    usuario.foto = "padrao.png"
+
+                db.session.commit()
+
+                session["nome"] = usuario.nome
+
+                # Apaga a foto antiga somente após salvar
+                if foto_antiga != usuario.foto:
+                    excluir_foto(foto_antiga)
+
+                sucesso = "Perfil atualizado com sucesso!"
+                flash(sucesso, "sucesso")
+
+                return redirect(
+                    url_for("routes.meu_cadastro")
+                )
+
+            except ValueError as e:
+                db.session.rollback()
+
+                if nova_foto:
+                    excluir_foto(nova_foto)
+
+                erro = str(e)
+                flash(erro, "erro")
+
+            except Exception:
+                db.session.rollback()
+
+                if nova_foto:
+                    excluir_foto(nova_foto)
+
+                erro = "Não foi possível atualizar seu perfil."
+                flash(erro, "erro")
 
     return render_template(
-        "meu_cadastro.html", usuario=usuario, erro=erro, sucesso=sucesso
+        "meu_cadastro.html",
+        usuario=usuario,
+        erro=erro,
+        sucesso=sucesso
     )
 
 
@@ -785,7 +934,47 @@ def mudar_status(id):
 @routes.route("/excluir-reserva/<int:id>", methods=["POST"])
 @admin_required
 def excluir_reserva(id):
-    reserva = Reserva.query.get_or_404(id)
+    reserva = db.get_or_404(Reserva, id)
+
     reserva.ativo = False
     db.session.commit()
+
+    flash("Reserva excluída com sucesso!", "sucesso")
+
     return redirect(url_for("routes.lista_reservas"))
+
+
+@routes.route("/excluir-minha-conta", methods=["POST"])
+@cliente_required
+def excluir_minha_conta():
+    usuario = db.session.get(Usuario, session["usuario_id"])
+
+    if not usuario:
+        flash("Usuário não encontrado.", "erro")
+        return redirect(url_for("routes.login"))
+
+    foto_antiga = usuario.foto
+
+    try:
+        # Preserva as reservas, mas desvincula o usuário
+        Reserva.query.filter_by(
+            usuario_id=usuario.id
+        ).update({"usuario_id": None})
+
+        # Exclui o usuário do banco
+        db.session.delete(usuario)
+        db.session.commit()
+
+    except Exception:
+        db.session.rollback()
+        flash("Erro ao excluir a conta.", "erro")
+        return redirect(url_for("routes.meu_cadastro"))
+
+    # Exclui a foto somente após confirmar no banco
+    excluir_foto(foto_antiga)
+
+    session.clear()
+
+    flash("Sua conta foi excluída com sucesso!", "sucesso")
+
+    return redirect(url_for("routes.login"))

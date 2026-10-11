@@ -1,4 +1,5 @@
 import logging
+import os
 from flask import Flask, request
 from flask_caching import Cache
 from sqlalchemy import inspect, text
@@ -13,6 +14,18 @@ from routes import routes, cache
 # ==========================================
 
 app = Flask(__name__)
+
+# Configurações para upload de fotos
+app.config["UPLOAD_FOLDER"] = os.path.join(
+    app.static_folder, "uploads"
+)
+
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
+
+os.makedirs(
+    app.config["UPLOAD_FOLDER"],
+    exist_ok=True
+)
 
 # ==========================================
 # CONFIGURAÇÕES DA APLICAÇÃO E CACHE
@@ -65,6 +78,23 @@ with app.app_context():
 
     inspector = inspect(db.engine)
     tabelas = inspector.get_table_names()
+
+    # Adiciona a coluna de foto aos usuários existentes
+    if "usuarios" in tabelas:
+        colunas_usuarios = [
+            coluna["name"]
+            for coluna in inspector.get_columns("usuarios")
+        ]
+
+        if "foto" not in colunas_usuarios:
+            with db.engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE usuarios "
+                        "ADD COLUMN foto VARCHAR(255) "
+                        "NOT NULL DEFAULT 'padrao.png'"
+                    )
+                )
 
         # Garante que a tabela reservas tenha as colunas necessárias
     if "reservas" in tabelas:

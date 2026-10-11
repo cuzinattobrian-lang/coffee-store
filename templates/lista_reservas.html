@@ -81,6 +81,8 @@
                 <table class="tabela-reservas">
                     <thead>
                         <tr>
+                            <th>Foto</th>
+
                             <th>ID</th>
 
                             <th>Nome</th>
@@ -105,6 +107,14 @@
                         {% for reserva in reservas %}
 
                         <tr>
+                            <td>
+                                <img
+                                    src="{{ url_for('static', filename='uploads/' ~ ((reserva.usuario.foto or 'padrao.png') if reserva.usuario else 'padrao.png')) }}"
+                                    alt="Foto do cliente"
+                                    class="foto-reserva"
+                                >
+                            </td>
+                            
                             <td>#{{ reserva.id }}</td>
 
                             <td>

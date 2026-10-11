@@ -36,3 +36,7 @@ Thumbs.db
 # Arquivos temporários
 *.tmp
 *.temp
+
+# Fotos enviadas pelos usuários
+/static/uploads/*
+!/static/uploads/padrao.png
